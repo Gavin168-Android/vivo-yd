@@ -3,8 +3,20 @@ name: 批量更新 title / short
 on:
   workflow_dispatch:   # 手动触发
     inputs:
+      prefix:
+        description: '文件名前缀，例如 xm / abc / lv（默认 xm）'
+        required: false
+        default: 'xm'
       title:
         description: '新的 data.title 内容（留空则不更新 title）'
+        required: false
+        default: ''
+      br_title:
+        description: '新的 data.br_title 内容（留空则不更新 br_title）'
+        required: false
+        default: ''
+      ph_title:
+        description: '新的 data.ph_title 内容（留空则不更新 ph_title）'
         required: false
         default: ''
       shorts:
@@ -12,11 +24,11 @@ on:
         required: false
         default: ''
       start:
-        description: '起始文件序号（含），例如 1 表示仅处理 xm1.json 及之后的文件（留空则从头开始）'
+        description: '起始文件序号（含），例如 1 表示仅处理 <前缀>1.json 及之后的文件（留空则从头开始）'
         required: false
         default: ''
       end:
-        description: '结束文件序号（含），例如 10 表示仅处理到 xm10.json（留空则到末尾）'
+        description: '结束文件序号（含），例如 10 表示仅处理到 <前缀>10.json（留空则到末尾）'
         required: false
         default: ''
 
@@ -35,13 +47,26 @@ jobs:
           python-version: '3.11'
 
       - name: 运行更新脚本
+        env:
+          PREFIX: ${{ inputs.prefix }}
+          NEW_TITLE: ${{ inputs.title }}
+          NEW_BR_TITLE: ${{ inputs.br_title }}
+          NEW_PH_TITLE: ${{ inputs.ph_title }}
+          NEW_SHORTS: ${{ inputs.shorts }}
+          START_IN: ${{ inputs.start }}
+          END_IN: ${{ inputs.end }}
         run: |
-          python -c '
+          python - <<'PY'
           import json, glob, os, re
 
-          NEW_TITLE = "${{ inputs.title }}"
-          NEW_SHORTS = [s.strip() for s in "${{ inputs.shorts }}".split(",") if s.strip()] if "${{ inputs.shorts }}" else []
-          FILE_PATTERN = "config/xm*.json"
+          PREFIX       = os.environ["PREFIX"].strip()
+          NEW_TITLE    = os.environ["NEW_TITLE"]
+          NEW_BR_TITLE = os.environ["NEW_BR_TITLE"]
+          NEW_PH_TITLE = os.environ["NEW_PH_TITLE"]
+          SHORTS_RAW   = os.environ["NEW_SHORTS"]
+          NEW_SHORTS   = [s.strip() for s in SHORTS_RAW.split(",") if s.strip()] if SHORTS_RAW else []
+          FILE_PATTERN = f"config/{PREFIX}*.json"
+          INDEX_RE     = re.compile(rf"{re.escape(PREFIX)}(\d+)\.json$")
 
           def to_int_or_none(v):
               v = (v or "").strip()
@@ -53,11 +78,11 @@ jobs:
                   print(f"警告：start/end 不是合法整数，已忽略: {v!r}")
                   return None
 
-          START = to_int_or_none("${{ inputs.start }}")
-          END = to_int_or_none("${{ inputs.end }}")
+          START = to_int_or_none(os.environ["START_IN"])
+          END   = to_int_or_none(os.environ["END_IN"])
 
           def file_index(fp):
-              m = re.search(r"xm(\d+)\.json$", fp)
+              m = INDEX_RE.search(fp)
               return int(m.group(1)) if m else None
 
           matched = glob.glob(FILE_PATTERN)
@@ -67,7 +92,7 @@ jobs:
           for filepath in matched:
               idx = file_index(filepath)
               if idx is None:
-                  print(f"跳过（文件名不符合 xm<数字>.json）: {filepath}")
+                  print(f"跳过（文件名不符合 {PREFIX}<数字>.json）: {filepath}")
                   continue
               if START is not None and idx < START:
                   continue
@@ -85,6 +110,14 @@ jobs:
                       old = data["data"].get("title")
                       data["data"]["title"] = NEW_TITLE
                       changed.append(f"title: {old} -> {NEW_TITLE}")
+                  if NEW_BR_TITLE:
+                      old = data["data"].get("br_title")
+                      data["data"]["br_title"] = NEW_BR_TITLE
+                      changed.append(f"br_title: {old} -> {NEW_BR_TITLE}")
+                  if NEW_PH_TITLE:
+                      old = data["data"].get("ph_title")
+                      data["data"]["ph_title"] = NEW_PH_TITLE
+                      changed.append(f"ph_title: {old} -> {NEW_PH_TITLE}")
                   if NEW_SHORTS:
                       old = data["data"].get("short")
                       data["data"]["short"] = NEW_SHORTS
@@ -100,17 +133,19 @@ jobs:
                   print(f"[{idx}] 处理失败 {filepath}: {e}")
 
           print("\n全部处理完成！")
-          '
+          PY
 
       - name: 提交并推送修改
+        env:
+          PREFIX: ${{ inputs.prefix }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add config/xm*.json
+          git add "config/${PREFIX}*.json" || true
           if git diff --staged --quiet; then
             echo "没有需要提交的变更，跳过。"
             exit 0
           fi
-          git commit -m "批量更新 config 下的 title/short 字段"
+          git commit -m "批量更新 config 下的 title/br_title/ph_title/short 字段 (prefix=${PREFIX})"
           git pull --rebase --autostash || true
           git push
