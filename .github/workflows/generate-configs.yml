@@ -22,6 +22,14 @@ on:
         description: '生成的 data.title 内容'
         required: false
         default: 'welcome'
+      br_title:
+        description: '生成的 data.br_title 内容'
+        required: false
+        default: ''
+      ph_title:
+        description: '生成的 data.ph_title 内容'
+        required: false
+        default: ''
       shorts:
         description: '生成的 data.short 列表，逗号分隔，例如 A,B,C'
         required: false
@@ -45,17 +53,21 @@ jobs:
         END: ${{ inputs.end }}
         WIDTH: ${{ inputs.width }}
         TITLE: ${{ inputs.title }}
+        BR_TITLE: ${{ inputs.br_title }}
+        PH_TITLE: ${{ inputs.ph_title }}
         SHORTS: ${{ inputs.shorts }}
       run: |
         python - <<'PY'
         import json, os
 
-        prefix = os.environ["PREFIX"].strip()
-        START  = int(os.environ["START"])
-        END    = int(os.environ["END"])
-        WIDTH  = int(os.environ["WIDTH"])
-        TITLE  = os.environ["TITLE"]
-        SHORTS = [s.strip() for s in os.environ["SHORTS"].split(",") if s.strip()]
+        prefix   = os.environ["PREFIX"].strip()
+        START    = int(os.environ["START"])
+        END      = int(os.environ["END"])
+        WIDTH    = int(os.environ["WIDTH"])
+        TITLE    = os.environ["TITLE"]
+        BR_TITLE = os.environ["BR_TITLE"]
+        PH_TITLE = os.environ["PH_TITLE"]
+        SHORTS   = [s.strip() for s in os.environ["SHORTS"].split(",") if s.strip()]
 
         def name_of(n):
             w = WIDTH
@@ -74,7 +86,12 @@ jobs:
                 print(f"跳过(已存在，不覆盖): {fn}")
                 skipped.append(fn)
                 continue
-            payload = {"data": {"title": TITLE, "short": SHORTS}}
+            payload = {"data": {
+                "title": TITLE,
+                "br_title": BR_TITLE,
+                "ph_title": PH_TITLE,
+                "short": SHORTS,
+            }}
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(payload, f, ensure_ascii=False, indent=2)
             print(f"已新建: {fn}")
